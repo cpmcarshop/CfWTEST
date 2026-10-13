@@ -3180,16 +3180,35 @@ const auth = getAuth(app);
         console.error('リダイレクトエラー:', error);
       });
     
-   onAuthStateChanged(auth, async (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (user) {
     window.currentUser = user;
+
+    // ★★★ 最優先：BANチェック（UIを一切触る前に） ★★★
+    try {
+      const banCheck = await callGasApi('checkBan', { uid: user.uid }, false, true);
+      if (banCheck && banCheck.banned) {
+        const url = GAS_URL + '?page=goodbye' +
+          (banCheck.remaining ? '&days=' + encodeURIComponent(banCheck.remaining) : '');
+        window.location.replace(url);   // 履歴に残さず即移動
+        return;                         // 以降の処理は全部スキップ
+      }
+    } catch (e) {
+      console.warn('BANチェック失敗:', e);
+      // 失敗しても進行（BANされていない可能性の方が高い）
+    }
+
+    // ★ BANじゃないと確定してから、初めてUIとロードを動かす
     document.getElementById('user-display-name').innerText = '認証中...';
     document.getElementById('auth-btn').innerText = '管理';
     document.getElementById('mypage-tab').classList.add('is-visible');
-document.getElementById('deal-board-nav-btn').style.display = 'inline-block';
-setTimeout(() => updateDealBoardBadge(), 3000);
-setInterval(() => updateDealBoardBadge(), 120000);  // ★ 60秒 → 120秒に延長
-    // ★ registerUser を強制更新（キャッシュを無視）
+    document.getElementById('deal-board-nav-btn').style.display = 'inline-block';
+    setTimeout(() => updateDealBoardBadge(), 3000);
+    setInterval(() => updateDealBoardBadge(), 120000);
+
+    // ★ ここで初めて車両をロード
+    window.triggerInitialLoad && window.triggerInitialLoad();
+
     const userInfo = await callGasApi('registerUser', {
       uid: user.uid,
       name: '',
@@ -3225,19 +3244,22 @@ setInterval(() => updateDealBoardBadge(), 120000);  // ★ 60秒 → 120秒に�
     checkAndShowAnnouncements();
 
   } else {
-    // ログアウト時
+    // ログアウト時：未ログインとして通常ロード
     window.currentUser = null;
     document.getElementById('user-display-name').innerText = '';
     document.getElementById('auth-btn').innerText = 'ログイン / 登録';
     document.getElementById('mypage-tab').classList.remove('is-visible');
     document.getElementById('deal-board-nav-btn').style.display = 'none';
+
+    // ★ 未ログインでも車両は見せる
+    window.triggerInitialLoad && window.triggerInitialLoad();
   }
 });
   
 </script>
 
   <script>
-    const GAS_URL = "https://kakuusha-gai.paapaapaa810.workers.dev"; // GASのWebアプリURL
+ var GAS_URL = "https://kakuusha-gai.paapaapaa810.workers.dev";
 const currentAbortControllers = {};   // ★ action ごとに保持
 let currentSelectedMakerId = null;
     // ローディング状態管理カウンター
@@ -6388,10 +6410,25 @@ loadHomeCars = async function(force = false) {
   }
 };
 
-    // 初期表示
-loadHomeCars();
-loadAnnouncement(); // ★ 追加
-    setupInfiniteScroll();
+// ============================================================
+// ★ BANチェック完了まで初期ロードを保留
+// ============================================================
+let _initialLoadTriggered = false;
+
+function triggerInitialLoad() {
+  if (_initialLoadTriggered) return;
+  _initialLoadTriggered = true;
+  loadHomeCars();
+  loadAnnouncement();
+  setupInfiniteScroll();
+}
+
+// フェイルセーフ：2秒以内に認証が解決しなければ、通常ロード（未ログイン扱い）
+setTimeout(triggerInitialLoad, 2000);
+
+// グローバルに公開（onAuthStateChanged から呼ぶため）
+window.triggerInitialLoad = triggerInitialLoad;
+window._bannedCheckInProgress = true;
 // ============================================================
 // スクロールに合わせたヘッダー表示/非表示（方向検知＋閾値版）
 // ============================================================
