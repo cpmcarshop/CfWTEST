@@ -2674,6 +2674,56 @@ html[data-mode="light"] {
   --modal-body: #555;
 }
 
+/* ============================================================
+   ★ ファイル選択欄をカスタムUI化
+   ============================================================ */
+input[type="file"].cfi-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.cfi-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  vertical-align: middle;
+  margin: 4px 0;
+}
+.cfi-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: #0f1428;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #fff;
+  transition: 0.15s;
+  user-select: none;
+}
+.cfi-btn:hover {
+  background: #16213e;
+  border-color: #00d2ff;
+}
+.cfi-status {
+  font-size: 0.8rem;
+  color: #888;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cfi-status.cfi-done {
+  color: #4caf50;
+}
+.file-status { display: none !important; }
+
   </style>
 </head>
 <body>
@@ -5710,6 +5760,9 @@ function confirmEditor() {
     statusSpan.style.fontWeight = 'bold';
   }
 
+  // ★ カスタムUIに「編集済み」を反映
+  if (editorFileInput) editorFileInput.dispatchEvent(new Event('cfi-refresh'));
+
   closeEditorModal();
   document.getElementById('editor-status').textContent = '✅ 編集完了！';
 }
@@ -6498,6 +6551,83 @@ window._bannedCheckInProgress = true;
     updateHeaderHeight();
   }, 500);
 })(); 
+
+// ============================================================
+// ★ ファイル選択欄をカスタムUI化
+// ============================================================
+(function () {
+  function buildCustomUI(input) {
+    if (input.dataset.cfiReady === '1') return;
+    input.dataset.cfiReady = '1';
+
+    input.classList.add('cfi-hidden');
+
+    const wrap = document.createElement('span');
+    wrap.className = 'cfi-wrap';
+
+    const btn = document.createElement('span');
+    btn.className = 'cfi-btn';
+    btn.innerHTML = '📁 <span class="cfi-label">ファイルを選択</span>';
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      input.click();
+    });
+
+    const status = document.createElement('span');
+    status.className = 'cfi-status';
+
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(btn);
+    wrap.appendChild(status);
+    wrap.appendChild(input);
+
+    function refresh() {
+      const label = btn.querySelector('.cfi-label');
+      if (input.dataset.editedBase64) {
+        status.textContent = '✅ 編集済み';
+        status.classList.add('cfi-done');
+        label.textContent = '別の画像を選択';
+      } else if (input.files && input.files[0]) {
+        status.textContent = input.files[0].name;
+        status.classList.add('cfi-done');
+        label.textContent = '別の画像を選択';
+      } else {
+        status.textContent = '未選択';
+        status.classList.remove('cfi-done');
+        label.textContent = 'ファイルを選択';
+      }
+    }
+
+    input.addEventListener('change', refresh);
+    input.addEventListener('cfi-refresh', refresh);
+    refresh();
+  }
+
+  function applyAll() {
+    document.querySelectorAll('input[type="file"]').forEach(buildCustomUI);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyAll);
+  } else {
+    applyAll();
+  }
+
+  const observer = new MutationObserver(function (mutations) {
+    mutations.forEach(function (m) {
+      m.addedNodes.forEach(function (n) {
+        if (n.nodeType !== 1) return;
+        if (n.matches && n.matches('input[type="file"]')) buildCustomUI(n);
+        if (n.querySelectorAll) {
+          n.querySelectorAll('input[type="file"]').forEach(buildCustomUI);
+        }
+      });
+    });
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+})();
   </script>
 
   
